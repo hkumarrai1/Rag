@@ -8,7 +8,7 @@ import {
 } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import WelcomePage from "./components/WelcomePage";
-import ChatPage from "./components/Chatpage";
+import ChatPage from "./components/ChatPage";
 import AdminPanel from "./components/AdminPanel";
 import "./components/styles/globals.css";
 
