@@ -13,7 +13,7 @@ from vectorstore import vector_store_manager
 logger = logging.getLogger(__name__)
 
 class RAGSystem:
-    """Main RAG system handling retrieval and generation"""
+    """Enhanced RAG system with better multi-file retrieval"""
     
     def __init__(self):
         self.llm = self._initialize_llm()
@@ -26,23 +26,29 @@ class RAGSystem:
                 model="gemini-2.5-flash",
                 google_api_key=config.GEMINI_API_KEY,
                 temperature=0.1,
-                max_tokens=1000
+                max_tokens=1500  # Increased for more comprehensive answers
             )
         except Exception as e:
             logger.error(f"Failed to initialize LLM: {e}")
             raise
     
     def _initialize_prompt(self):
-        """Initialize the prompt template"""
-        template = """Use the following context to answer the question. 
-        If you don't know the answer based on the context, say you don't know.
+        """Initialize the prompt template with better instructions"""
+        template = """You are an AI assistant that helps with supplier and company information. 
+        Use the following context from multiple sources to provide a comprehensive answer.
 
-        Context:
+        CONTEXT FROM VARIOUS SOURCES:
         {context}
 
-        Question: {question}
+        QUESTION: {question}
 
-        Answer:"""
+        INSTRUCTIONS:
+        1. Synthesize information from ALL relevant sources
+        2. If different sources have conflicting information, mention this
+        3. Provide a comprehensive answer that considers all available data
+        4. If you cannot find specific information, say so but still use what you have
+
+        COMPREHENSIVE ANSWER:"""
         
         return PromptTemplate(
             template=template,
@@ -50,25 +56,71 @@ class RAGSystem:
         )
     
     def retrieve(self, question: str) -> Tuple[List[Document], List[str]]:
-        """Retrieve relevant documents and extract sources"""
+        """Retrieve relevant documents from ALL files with enhanced search"""
         try:
-            documents = vector_store_manager.similarity_search(question)
+            # Use a larger k value to get more diverse results
+            k = min(12, config.SIMILARITY_TOP_K * 2)  # Get more documents for better coverage
+            
+            documents = vector_store_manager.similarity_search(question, k=k)
             sources = list(set([doc.metadata.get('source', 'Unknown') for doc in documents]))
+            
+            logger.info(f"🔍 Retrieved {len(documents)} documents from {len(sources)} unique sources: {sources}")
+            
+            # If we have documents but from only one source, try to get more diversity
+            if len(sources) == 1 and len(documents) > 3:
+                logger.info("Only one source found, attempting to get more diverse results...")
+                # Try with a different approach - get some random documents too
+                try:
+                    # Get a few random documents to increase diversity
+                    all_docs = vector_store_manager.vector_store.get()
+                    if all_docs and 'documents' in all_docs:
+                        total_docs = len(all_docs['documents'])
+                        if total_docs > len(documents):
+                            # Add some random documents from other sources
+                            import random
+                            other_docs = []
+                            for doc in all_docs['documents']:
+                                doc_source = doc.metadata.get('source', 'Unknown') if hasattr(doc, 'metadata') else 'Unknown'
+                                if doc_source not in sources:
+                                    other_docs.append(doc)
+                            
+                            if other_docs:
+                                # Add 2-3 random documents from other sources
+                                random_samples = random.sample(other_docs, min(3, len(other_docs)))
+                                documents.extend(random_samples)
+                                sources = list(set([doc.metadata.get('source', 'Unknown') for doc in documents]))
+                                logger.info(f"Added {len(random_samples)} random documents, now have {len(sources)} sources")
+                except Exception as e:
+                    logger.warning(f"Could not add diverse documents: {e}")
+            
             return documents, sources
         except Exception as e:
             logger.error(f"Retrieval failed: {e}")
             return [], []
     
     def generate(self, question: str, context_docs: List[Document]) -> str:
-        """Generate answer using context documents"""
+        """Generate answer using context documents from multiple sources"""
         if not context_docs:
             return "I couldn't find relevant information in the knowledge base to answer your question. Please try rephrasing or ask about something else."
         
         try:
-            context_text = "\n\n".join([
-                f"Source: {doc.metadata.get('source', 'Unknown')}\nContent: {doc.page_content}"
-                for doc in context_docs
-            ])
+            # Organize context by source for better synthesis
+            context_by_source = {}
+            for doc in context_docs:
+                source = doc.metadata.get('source', 'Unknown')
+                if source not in context_by_source:
+                    context_by_source[source] = []
+                context_by_source[source].append(doc.page_content)
+            
+            # Build comprehensive context text
+            context_sections = []
+            for source, contents in context_by_source.items():
+                source_content = "\n".join([f"- {content}" for content in contents[:3]])  # Limit per source
+                context_sections.append(f"FROM {source}:\n{source_content}")
+            
+            context_text = "\n\n".join(context_sections)
+            
+            logger.info(f"📚 Using context from {len(context_by_source)} sources: {list(context_by_source.keys())}")
             
             prompt_text = self.prompt.format(
                 context=context_text,
@@ -83,7 +135,7 @@ class RAGSystem:
             return "I apologize, but I encountered an error while generating the answer. Please try again later."
     
     def answer_question(self, question: str) -> dict:
-        """Main RAG pipeline with timing and error handling"""
+        """Main RAG pipeline with enhanced multi-source retrieval"""
         start_time = time.time()
         
         if not question or not question.strip():
@@ -94,10 +146,10 @@ class RAGSystem:
             }
         
         try:
-            # Retrieve relevant documents
+            # Retrieve relevant documents from ALL sources
             context_docs, sources = self.retrieve(question)
             
-            # Generate answer
+            # Generate comprehensive answer
             answer = self.generate(question, context_docs)
             
             processing_time = time.time() - start_time
@@ -105,7 +157,8 @@ class RAGSystem:
             return {
                 "answer": answer,
                 "sources": sources,
-                "processing_time": round(processing_time, 2)
+                "processing_time": round(processing_time, 2),
+                "documents_used": len(context_docs)
             }
             
         except Exception as e:
@@ -114,7 +167,8 @@ class RAGSystem:
             return {
                 "answer": "I'm sorry, but I encountered an unexpected error while processing your question.",
                 "sources": [],
-                "processing_time": round(processing_time, 2)
+                "processing_time": round(processing_time, 2),
+                "documents_used": 0
             }
 
 # Global RAG system instance

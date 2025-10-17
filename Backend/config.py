@@ -26,9 +26,9 @@ class Config:
         self.ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.csv', '.md'}
         
         # RAG settings
-        self.CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
-        self.CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
-        self.SIMILARITY_TOP_K = int(os.getenv("SIMILARITY_TOP_K", "4"))
+        self.CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))  # Smaller chunks
+        self.CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+        self.SIMILARITY_TOP_K = int(os.getenv("SIMILARITY_TOP_K", "8"))  # Increased from 4 to 8
         
         self._validate_config()
     

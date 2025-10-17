@@ -149,6 +149,16 @@ async def reset_upload(
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
     
+    # FIRST: Clear the upload directory before saving new files
+    logger.info("Clearing existing upload directory...")
+    for existing_file in os.listdir(config.UPLOAD_DIR):
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, existing_file))
+            logger.info(f"Removed existing file: {existing_file}")
+        except Exception as e:
+            logger.warning(f"Failed to remove {existing_file}: {e}")
+    
+    # SECOND: Save new files
     file_paths = []
     processed_files = 0
     
@@ -163,6 +173,7 @@ async def reset_upload(
                 shutil.copyfileobj(file.file, f)
             file_paths.append(path)
             processed_files += 1
+            logger.info(f"Saved new file: {filename}")
             
         except HTTPException:
             raise
@@ -173,11 +184,8 @@ async def reset_upload(
     if not file_paths:
         raise HTTPException(status_code=400, detail="No valid files to process")
     
-    # Clear upload directory
-    for existing_file in os.listdir(config.UPLOAD_DIR):
-        os.remove(os.path.join(config.UPLOAD_DIR, existing_file))
-    
-    # Reset and add files
+    # THIRD: Reset vector store and add new files
+    logger.info(f"Starting vector store reset with {len(file_paths)} files")
     results = vector_store_manager.reset_and_add_files(file_paths)
     
     successful = sum(1 for r in results if r['status'] == 'success')
