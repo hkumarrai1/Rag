@@ -107,11 +107,19 @@ const FileUploader = ({ resetMode = false }) => {
     } catch (error) {
       console.error("Upload error:", error);
       setUploadProgress(0);
+
+      const reqUrl = error.config
+        ? (error.config.baseURL || "") + (error.config.url || "")
+        : "unknown URL";
+      const status = error.response?.status;
+      const serverBody = error.response?.data;
+
       setMessage({
         text:
-          error.response?.data?.detail ||
-          error.response?.data?.message ||
-          "Error uploading files. Please try a smaller file.",
+          `Upload failed${status ? ` (status ${status})` : ""} at ${reqUrl}` +
+          (serverBody
+            ? ` — ${JSON.stringify(serverBody)}`
+            : ` — ${error.message}`),
         type: "error",
       });
     } finally {
